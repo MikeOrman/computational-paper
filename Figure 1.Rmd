@@ -5,6 +5,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 library(curatedPCaData)
+TCGA.data <- curatedPCaData::mae_tcga
+Abid.data <- curatedPCaData::mae_abida
 ```
 
 ## R Markdown
