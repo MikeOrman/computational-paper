@@ -54,8 +54,8 @@ Abida.loss.enrichment <- concurrent.loss.data(Abida.CNA.fusion.neg,Abida.CNA.fus
 Create main data frame. Column 1 contains HGNC symbols, and Column 2 contains 
 p-value from whatever type of computational analysis
 ```{r}
-Hugo.symbol <- CNA.loss.enrichment$Hugo_Symbol
-p <- CNA.loss.enrichment$`adjusted loss p val`
+Hugo.symbol <- TCGA.loss.enrichment$Hugo_Symbol
+p <- TCGA.loss.enrichment$`adjusted loss p val`
 main <- data.frame(Hugo.symbol, p)
 ```
 Annotate Entrez Gene ID

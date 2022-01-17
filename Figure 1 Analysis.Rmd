@@ -1,0 +1,124 @@
+---
+title: "Figure 1 Analysis"
+output: html_document
+---
+Load mae objects
+```{r, message=FALSE}
+library(curatedPCaData)
+TCGA <- curatedPCaData::mae_tcga
+Abida <- curatedPCaData::mae_abida
+Baca <- curatedPCaData::mae_baca
+Taylor <- curatedPCaData::mae_taylor
+Barbieri <- curatedPCaData::mae_barbieri
+```
+Add fusion status to TCGA mae
+```{r}
+library(readxl)
+TCGA.annotations <- read_xlsx("TCGA sample annotations.xlsx")
+for (i in 1:333) {
+  index <- which(TCGA@colData@listData$sample_name[i] == TCGA.annotations$SAMPLE_ID)
+  TCGA@colData@listData$ERG_fusion_CNA[i] <- TCGA.annotations$Subtype[index]
+}
+```
+Subset CNA profiles by fusion status
+```{r, echo=FALSE}
+TCGA.CNA <- as.data.frame(TCGA@ExperimentList@listData$cna.gistic)
+TCGA.CNA.fusion.pos <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "1-ERG" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "2-ETV1" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "3-ETV4" |
+                                    TCGA@colData@listData$ERG_fusion_CNA =="4-FLI1")]
+TCGA.CNA.fusion.neg <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "5-SPOP" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "6-FOXA1" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "7-IDH1" |
+                                    TCGA@colData@listData$ERG_fusion_CNA =="8-other")]
+Abida.CNA <- as.data.frame(Abida@ExperimentList@listData$cna.gistic)
+Abida.CNA.fusion.pos <- Abida.CNA[,Abida@colData@listData$ERG_fusion_GEX==1]
+Abida.CNA.fusion.neg <- Abida.CNA[,Abida@colData@listData$ERG_fusion_GEX==0]
+```
+Format CNA profiles for enrichment analysis
+```{r}
+#TCGA
+TCGA.CNA.fusion.pos <- cbind(rownames(TCGA.CNA), TCGA.CNA.fusion.pos)
+colnames(TCGA.CNA.fusion.pos)[1] <- "Hugo_Symbol"
+TCGA.CNA.fusion.neg <- cbind(rownames(TCGA.CNA), TCGA.CNA.fusion.neg)
+colnames(TCGA.CNA.fusion.neg)[1] <- "Hugo_Symbol"
+#Abida
+Abida.CNA.fusion.pos <- cbind(rownames(Abida.CNA), Abida.CNA.fusion.pos)
+colnames(Abida.CNA.fusion.pos)[1] <- "Hugo_Symbol"
+Abida.CNA.fusion.neg <- cbind(rownames(Abida.CNA), Abida.CNA.fusion.neg)
+colnames(Abida.CNA.fusion.neg)[1] <- "Hugo_Symbol"
+```
+Compute CNA enrichment in context of ETS fusions
+```{r, echo=FALSE, message=FALSE}
+source("analysis scripts.R")
+TCGA.loss.enrichment <- concurrent.loss.data(TCGA.CNA.fusion.neg,TCGA.CNA.fusion.pos)
+Abida.loss.enrichment <-concurrent.loss.data(Abida.CNA.fusion.neg,Abida.CNA.fusion.pos)
+```
+Generate manhattan plot object (GR object) for loss enrichment in Abida ERG+ patients
+```{r, message=FALSE}
+source("manhattan.R")
+Abida.loss.fusion.pos <- data.frame(Abida.loss.enrichment$Hugo_Symbol[Abida.loss.enrichment$`normalized subtype loss ratio` < 1],
+                               Abida.loss.enrichment$`loss p val`[Abida.loss.enrichment$`normalized subtype loss ratio` < 1])
+Abida.loss.fusion.pos.gr <- manhattan.object(Abida.loss.fusion.pos)
+```
+Generate manhattan plot object (GR object) for loss enrichment in Abida ERG- patients
+```{r, message=FALSE}
+source("manhattan.R")
+Abida.loss.fusion.neg <- data.frame(Abida.loss.enrichment$Hugo_Symbol[Abida.loss.enrichment$`normalized subtype loss ratio` > 1],
+                               Abida.loss.enrichment$`loss p val`[Abida.loss.enrichment$`normalized subtype loss ratio` > 1])
+Abida.loss.fusion.neg.gr <- manhattan.object(Abida.loss.fusion.neg)
+```
+Plot the ERG+ and ERG- manhattan plots from Abida on the same graph
+```{r}
+pdf(file = "Abida copy number loss enrichment.pdf")
+params <- getDefaultPlotParams(plot.type = 4)
+params$leftmargin = 0.1
+params$topmargin = 50
+params$bottommargin = 30
+kp <- plotKaryotype(plot.type=4, cex = 0.85, labels.plotter = NULL, plot.params = params)
+kpAddChromosomeNames(kp, srt = 90, cex = 0.85)
+#Add ERG+ manhattan plot
+kp <- kpPlotManhattan(kp, Abida.loss.fusion.pos.gr, r0=0.5, r1=1, ymax=6, points.col = "dark orange", points.cex = 0.4)
+kpAxis(kp, ymin=0, ymax=6, r0=0.5, r1=1, tick.pos = c(3,6))
+kpAddLabels(kp, labels = "ERG+", srt=90, pos=1, r0=0.5, r1=1, cex=1.2, label.margin = 0.075)
+#Add ERG- manhattan plot
+kp <- kpPlotManhattan(kp, Abida.loss.fusion.neg.gr, r0=0.5, r1=0, ymax=6, points.col = "navy", points.cex = 0.4)
+kpAxis(kp, ymin=0, ymax=6, r0=0.5, r1=0, tick.pos = c(3,6))
+kpAddLabels(kp, labels = "ERG-", srt=90, pos=1, r0=0.5, r1=0, cex=1.2, label.margin = 0.075)
+kpAddMainTitle(kp, main = "Copy Number Loss Enrichment: Abida")
+dev.off
+```
+Generate manhattan plot object (GR object) for loss enrichment in TCGA ERG+ patients
+```{r, message=FALSE}
+source("manhattan.R")
+TCGA.loss.fusion.pos <- data.frame(TCGA.loss.enrichment$Hugo_Symbol[TCGA.loss.enrichment$`normalized subtype loss ratio` < 1],
+                               TCGA.loss.enrichment$`loss p val`[TCGA.loss.enrichment$`normalized subtype loss ratio` < 1])
+TCGA.loss.fusion.pos.gr <- manhattan.object(TCGA.loss.fusion.pos)
+```
+Generate manhattan plot object (GR object) for loss enrichment in TCGA ERG- patients
+```{r, message=FALSE}
+source("manhattan.R")
+TCGA.loss.fusion.neg <- data.frame(TCGA.loss.enrichment$Hugo_Symbol[TCGA.loss.enrichment$`normalized subtype loss ratio` > 1],
+                               TCGA.loss.enrichment$`loss p val`[TCGA.loss.enrichment$`normalized subtype loss ratio` > 1])
+TCGA.loss.fusion.neg.gr <- manhattan.object(TCGA.loss.fusion.neg)
+```
+Plot the ERG+ and ERG- manhattan plots from TCGA on the same graph
+```{r}
+pdf(file = "TCGA copy number loss enrichment.pdf")
+params <- getDefaultPlotParams(plot.type = 4)
+params$leftmargin = 0.1
+params$topmargin = 50
+params$bottommargin = 30
+kp <- plotKaryotype(plot.type=4, cex = 0.85, labels.plotter = NULL, plot.params = params)
+kpAddChromosomeNames(kp, srt = 90, cex = 0.85)
+#Add ERG+ manhattan plot
+kp <- kpPlotManhattan(kp, TCGA.loss.fusion.pos.gr, r0=0.5, r1=1, ymax=6, points.col = "dark orange", points.cex = 0.4)
+kpAxis(kp, ymin=0, ymax=6, r0=0.5, r1=1, tick.pos = c(3,6))
+kpAddLabels(kp, labels = "ERG+", srt=90, pos=1, r0=0.5, r1=1, cex=1.2, label.margin = 0.075)
+#Add ERG- manhattan plot
+kp <- kpPlotManhattan(kp, TCGA.loss.fusion.neg.gr, r0=0.5, r1=0, ymax=6, points.col = "navy", points.cex = 0.4)
+kpAxis(kp, ymin=0, ymax=6, r0=0.5, r1=0, tick.pos = c(3,6))
+kpAddLabels(kp, labels = "ERG-", srt=90, pos=1, r0=0.5, r1=0, cex=1.2, label.margin = 0.075)
+kpAddMainTitle(kp, main = "Copy Number Loss Enrichment: TCGA")
+dev.off
+```
