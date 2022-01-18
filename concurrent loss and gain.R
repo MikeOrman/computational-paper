@@ -9,12 +9,15 @@ concurrent.loss.data <- function(subset, dataset){
   for (i in 1:nrow(both.loss)){
     normalized.loss = both.loss$`Subset loss ratio`[i] / both.loss$`Dataset loss ratio`[i]
     matrix = matrix(as.numeric(both.loss[i, c(2, 5, 3, 6)]), ncol = 2)
-    test = fisher.test(matrix)$p.value
+    pval = fisher.test(matrix)$p.value
+    OR = as.numeric(fisher.test(matrix)$estimate)
     both.loss[i,8] = normalized.loss
-    both.loss[i,9] = test
+    both.loss[i,9] = pval
+    both.loss[i,10] = OR
   }
-  both.loss[,10] <- p.adjust(both.loss[,9], method = "fdr")
-  colnames(both.loss)[10] <- "adjusted loss p val"
+  both.loss[,11] <- p.adjust(both.loss[,9], method = "fdr")
+  colnames(both.loss)[11] <- "adjusted loss p val"
+  colnames(both.loss)[10] <- "odds ratio"
   colnames(both.loss)[8] <- "normalized subtype loss ratio"
   colnames(both.loss)[9] <- "loss p val"
   return(both.loss)
@@ -30,12 +33,16 @@ concurrent.gain.data <- function(subset, dataset){
   for (i in 1:nrow(both.gain)){
     normalized.gain = both.gain$`Subset gain ratio`[i] / both.gain$`Dataset gain ratio`[i]
     matrix = matrix(as.numeric(both.gain[i, c(2, 5, 3, 6)]), ncol = 2)
-    test = fisher.test(matrix)$p.value
+    pval = fisher.test(matrix)$p.value
+    OR = (fisher.test(matrix)$estimate)
     both.gain[i,8] = normalized.gain
-    both.gain[i,9] = test
+    both.gain[i,9] = pval
+    both.gain[i,10] = OR
   }
-  both.gain[,9] <- p.adjust(both.gain[,9], method = "fdr")
-  colnames(both.gain)[9] <- "adjusted gain p val"
+  both.gain[,11] <- p.adjust(both.gain[,9], method = "fdr")
+  colnames(both.gain)[11] <- "adjusted gain p val"
+  colnames(both.gain)[10] <- "odds ratio"
+  colnames(both.gain)[9] <- "gain p val"
   colnames(both.gain)[8] <- "normalized subtype gain ratio"
   return(both.gain)
 }
