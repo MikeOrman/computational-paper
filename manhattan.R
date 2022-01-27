@@ -73,8 +73,8 @@ manhattan.object <- function(input){
   Chr <- Chr.table[["Chr"]]
   Chr.counts <- Chr.table[["n"]]
   Chr.RLE <- Rle(Chr, Chr.counts)
-  #Make IRange object holding each gene's basepair range on its' respective chromosome
-  BP.IRange <- IRanges(main1$`Starting Position`)
+  #Make IRange object holding each gene's base pair range on its' respective chromosome
+  BP.IRange <- IRanges(start = main1$`Starting Position`, end = main1$`Ending Position`)
   #Create GR object for plotting
   gr <- GRanges(seqnames = Chr.RLE, ranges = BP.IRange)
   names(gr) <- main1$Hugo_Symbol
