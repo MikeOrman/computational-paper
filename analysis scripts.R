@@ -1,0 +1,6 @@
+source("subtype_subset.R")
+source("cancer_annotations.R")
+source("concurrent loss and gain.R")
+source("generank.R")
+source("annotate.R")
+source("manhattan.R")

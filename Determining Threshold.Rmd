@@ -1,0 +1,93 @@
+---
+title: "Determining threshold: TCGA"
+output: html_document
+---
+### Load datasets using CuratedPCa and add fusion info to TCGA
+Load TCGA mae
+```{r, message = FALSE}
+library(curatedPCaData)
+TCGA <- curatedPCaData::mae_tcga
+```
+Add fusion status to TCGA mae
+```{r}
+library(readxl)
+TCGA.annotations <- read_xlsx("TCGA sample annotations.xlsx")
+for (i in 1:333) {
+  index <- which(TCGA@colData@listData$sample_name[i] == TCGA.annotations$SAMPLE_ID)
+  TCGA@colData@listData$ERG_fusion_CNA[i] <- TCGA.annotations$Subtype[index]
+}
+```
+### Subset TCGA by fusion status and compute enrichment
+Subset CNA profiles by fusion status
+```{r}
+# TCGA subset
+TCGA.CNA <- as.data.frame(TCGA@ExperimentList@listData$cna.gistic)
+TCGA.CNA.fusion.pos <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "1-ERG" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "2-ETV1" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "3-ETV4" |
+                                    TCGA@colData@listData$ERG_fusion_CNA =="4-FLI1")]
+TCGA.CNA.fusion.neg <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "5-SPOP" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "6-FOXA1" |
+                                    TCGA@colData@listData$ERG_fusion_CNA == "7-IDH1" |
+                                    TCGA@colData@listData$ERG_fusion_CNA =="8-other")]
+```
+Format CNA profiles for enrichment analysis
+```{r}
+# Format TCGA
+TCGA.CNA.fusion.pos <- cbind(rownames(TCGA.CNA), TCGA.CNA.fusion.pos)
+colnames(TCGA.CNA.fusion.pos)[1] <- "Hugo_Symbol"
+TCGA.CNA.fusion.neg <- cbind(rownames(TCGA.CNA), TCGA.CNA.fusion.neg)
+colnames(TCGA.CNA.fusion.neg)[1] <- "Hugo_Symbol"
+```
+Compute CNA enrichment in context of ETS fusions
+```{r, message=FALSE}
+source("analysis scripts.R")
+TCGA.loss.enrichment <- concurrent.loss.data(TCGA.CNA.fusion.neg,TCGA.CNA.fusion.pos)
+```
+### Calculate coverage of genes, patients, chromosomes, and bands for different p-value thresholds in TCGA ETS- patients.
+Compute the number of patients, loci, and genes lost at different p-value thresholds
+```{r, message=FALSE}
+source("annotate.R")
+# Initialize vector of thresholds to be tested and a summary table for reporting
+# parameters for each threshold
+pval.cutoff <- c(0.30, 0.25, 0.20, 0.15, 0.10, 0.05, 0.04, 0.03, 0.02, 0.01, .0075, .005, .0025, .0001)
+cutoff.table <- data.frame()
+input <- annotate(TCGA.loss.enrichment[,c(1,9)])
+# Iterate through vector of pval cutoffs. For each cutoff, determine:
+# number of genes meeting this threshold, the number of patients harboring loss of at
+# least one of these genes, the number of cytogenetic band loci over which these genes 
+# are lost, and the number of chromosomes over which these genes are lost.
+for (i in 1:length(pval.cutoff)){
+  threshold <- input$pval <= pval.cutoff[i]
+  genes <- input[threshold,]
+  # Remove genes that do not meet cutoff (first loop), and then subset patients having 
+  # loss of at least one gene meeting the cutoff (second loop)
+  CNA <- data.frame()
+  for (j in 1:nrow(genes)){
+    index <- which(genes$Hugo_Symbol[j] == TCGA.CNA.fusion.neg$Hugo_Symbol)
+    CNA[j,1:ncol(TCGA.CNA.fusion.neg)] <- TCGA.CNA.fusion.neg[index,]
+  }
+  x <- c(TRUE)
+  for (k in 2:ncol(CNA)){
+    patient.CNA.profile <- CNA[k]
+    if (sum((patient.CNA.profile >= 0)) > 0) {x[k] = FALSE}
+    if (sum((patient.CNA.profile < 0)) > 0) {x[k] = TRUE}
+  }
+  subset <- CNA[,x]
+  # Add coverage information for cutoff to summary table
+  cutoff.table[i,1] <- pval.cutoff[i]
+  cutoff.table[i,2] <- (ncol(subset) - 1)/135
+  cutoff.table[i,3] <- nrow(genes)
+  cutoff.table[i,4] <- nrow(genes %>% count(Band))
+  cutoff.table[i,5] <- nrow(genes %>% count(Chr))
+}
+colnames(cutoff.table) <- c("p-value cut-off",
+                            "ratio patients covered",
+                            "genes covered",
+                            "cytogenetic bands covered",
+                            "chromosomes covered")
+print(cutoff.table)
+```
+A p-value cutoff of <= 0.1 captures 1,085 genes that are loss-enriched in 87.4% of ETS- TCGA patients when compared to ETS+ TCGA patients. These genes cover 146 cytogenetic bands and 17 chromosomes. 
+
+REPRESENT THIS GRAPHICALLY
