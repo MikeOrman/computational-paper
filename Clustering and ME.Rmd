@@ -1,60 +1,59 @@
 ---
-title: "Clustering & ME: TCGA"
+title: "Clustering and ME for TCGA"
 output: html_document
 ---
-### Load datasets using CuratedPCa and add fusion info to TCGA
-Load TCGA mae
+### Load datasets add fusion info to TCGA
+Load mae objects, take complete cases
 ```{r, message = FALSE}
 library(curatedPCaData)
 TCGA <- curatedPCaData::mae_tcga
+TCGA <- intersectColumns(TCGA)
 ```
-Add fusion status to TCGA mae
-```{r}
-library(readxl)
-TCGA.annotations <- read_xlsx("TCGA sample annotations.xlsx")
-for (i in 1:333) {
-  index <- which(TCGA@colData@listData$sample_name[i] == TCGA.annotations$SAMPLE_ID)
-  TCGA@colData@listData$ERG_fusion_CNA[i] <- TCGA.annotations$Subtype[index]
-}
-```
-### Subset TCGA by fusion status and compute enrichment
+### Subset TCGA dataset by ETS-family fusion status and compute copy number loss enrichment
 Subset CNA profiles by fusion status
-```{r}
-# TCGA subset
-TCGA.CNA <- as.data.frame(TCGA@ExperimentList@listData$cna.gistic)
-TCGA.CNA.fusion.pos <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "1-ERG" |
-                                    TCGA@colData@listData$ERG_fusion_CNA == "2-ETV1" |
-                                    TCGA@colData@listData$ERG_fusion_CNA == "3-ETV4" |
-                                    TCGA@colData@listData$ERG_fusion_CNA =="4-FLI1")]
-TCGA.CNA.fusion.neg <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "5-SPOP" |
-                                    TCGA@colData@listData$ERG_fusion_CNA == "6-FOXA1" |
-                                    TCGA@colData@listData$ERG_fusion_CNA == "7-IDH1" |
-                                    TCGA@colData@listData$ERG_fusion_CNA =="8-other")]
+``` {r}
+#TCGA subset
+TCGA.fusion.neg <- TCGA[,TCGA$ERG_fusion_GEX==0]
+TCGA.fusion.pos <- TCGA[,TCGA$ERG_fusion_GEX==1]
 ```
 Format CNA profiles for enrichment analysis
 ```{r}
-# Format TCGA
-TCGA.CNA.fusion.pos <- cbind(rownames(TCGA.CNA), TCGA.CNA.fusion.pos)
-colnames(TCGA.CNA.fusion.pos)[1] <- "Hugo_Symbol"
-TCGA.CNA.fusion.neg <- cbind(rownames(TCGA.CNA), TCGA.CNA.fusion.neg)
-colnames(TCGA.CNA.fusion.neg)[1] <- "Hugo_Symbol"
+#Format TCGA
+TCGA.fusion.pos <- as.data.frame(cbind(rownames(TCGA.fusion.pos@ExperimentList@listData$cna.gistic),
+                         TCGA.fusion.pos@ExperimentList@listData$cna.gistic))
+colnames(TCGA.fusion.pos)[1] <- "Hugo_Symbol"
+TCGA.fusion.neg <- as.data.frame(cbind(rownames(TCGA.fusion.neg@ExperimentList@listData$cna.gistic),
+                         TCGA.fusion.neg@ExperimentList@listData$cna.gistic))
+colnames(TCGA.fusion.neg)[1] <- "Hugo_Symbol"
 ```
 Compute CNA enrichment in context of ETS fusions
 ```{r, message=FALSE}
 source("analysis scripts.R")
-TCGA.loss.enrichment <- concurrent.loss.data(TCGA.CNA.fusion.neg,TCGA.CNA.fusion.pos)
+TCGA.loss.enrichment <- concurrent.loss.data(TCGA.fusion.neg, TCGA.fusion.pos)
 ```
-
-### Visualize genomic loss for threshold
+### Visualize ETS- genomic loss subject to threshold
+Filter out genes lost in ETS+ patients
+```{r, warning=FALSE}
+x <- c()
+ERGneg.genes <- TCGA.loss.enrichment
+for (i in 1:nrow(ERGneg.genes)){
+  if (ERGneg.genes$`Subset loss ratio`[i] >= ERGneg.genes$`Dataset loss ratio`[i])
+  {x[i] = TRUE} else {x[i] = FALSE}
+}
+ERGneg.genes <- ERGneg.genes[x,]
+```
+Further filter out genes that are (1) under the cutoff and (2) lacking annotation.
+```{r}
+cutoff <- 0.01
+ERGneg.genes <- annotate(ERGneg.genes[ERGneg.genes$`loss p val` <= cutoff,c(1,9)])
+```
+Visualize genomic loss in ETS- patients subject to threshold
 ```{r, message=FALSE}
-#Set threshold for downstream analysis
-cutoff <- 0.1
-#Generate dataframe for plotting threshold genes
-mp <- (TCGA.loss.enrichment[TCGA.loss.enrichment$`loss p val` <= cutoff,])[,c(1,9)]
-#Plot threshold genes on manhattan plot
+#Create manhattan object
 source("manhattan.R")
-mp <- manhattan.object(mp)
-kp <- kpPlotManhattan(karyoplot = plotKaryotype(plot.type = 1), 
+mp <- manhattan.object(ERGneg.genes[,c(1,2)])
+#Plot manhattan object
+kp <- kpPlotManhattan(karyoplot = plotKaryotype(plot.type = 2), 
                       data = mp,
                       points.col = "Navy",
                       genomewide.col = "white",
@@ -62,33 +61,24 @@ kp <- kpPlotManhattan(karyoplot = plotKaryotype(plot.type = 1),
 ```
 ```{r}
 ```
-### Determine loss regions harbored by each patient
-Filter out genes under the threshold for TCGA fusion neg patients
+### Determine statistically significant loss regions harbored by ERG- patients
+Filter out ganees from ETS- CNA profiles that are (1) not lost in ETS- patients, (2) do not meet cutoff, and (3) lack annotation
 ```{r}
-source("annotate.R")
-index <- TCGA.loss.enrichment$`loss p val` <= cutoff
-threshold.genes <- annotate(TCGA.loss.enrichment[index,c(1,9)])
-input <- TCGA.CNA[,(TCGA@colData@listData$ERG_fusion_CNA == "5-SPOP" |
-                                    TCGA@colData@listData$ERG_fusion_CNA == "6-FOXA1" |
-                                    TCGA@colData@listData$ERG_fusion_CNA == "7-IDH1" |
-                                    TCGA@colData@listData$ERG_fusion_CNA =="8-other")]
-index <- c()
-for (i in 1:nrow(input)){
-  if (sum(rownames(input)[i] == threshold.genes$Hugo_Symbol) == 0)
-  {index[i] = FALSE}
-  if (sum(rownames(input)[i] == threshold.genes$Hugo_Symbol) == 1)
-  {index[i] = TRUE}
+x <- c()
+for (i in 1:nrow(TCGA.fusion.neg)){
+  if (sum(TCGA.fusion.neg[i,1] == ERGneg.genes$Hugo_Symbol) > 0)
+  {x[i] <- TRUE} else {x[i] <- FALSE}
 }
-filtered.threshold <- input[index,]
+TCGA.fusion.neg.filtered <- TCGA.fusion.neg[x,]
 ```
-Create binary matrix of patients by CNA < 0
-``` {r}
-binary <- filtered.threshold
+Create binary matrix of CNA < 0 for ETS- patients
+```{r}
+binary <- TCGA.fusion.neg.filtered
 binary[binary >= 0] <- 0
 binary[binary < 0] <- 1
 ```
 Annotate genes in binary matrix with gene ID, chromosome, band, and locus
-```{r, warning=FALSE}
+``` {r, warning=FALSE}
 main <- data.frame(rownames(binary))
 # Annotate Entrez Gene ID
 mapped_HGNC <- as.data.frame(org.Hs.egSYMBOL[mappedkeys(org.Hs.egSYMBOL)])
@@ -130,10 +120,12 @@ for (i in 1:nrow(main)){
 }
 colnames(main)[5] <- "Locus"
 ```
-Summary of copy number loss genes meeting threshold
-```{r}
-head(main)
-tail(main)
+Summary of genes loss-enriched in ETS- patients
+```{r, message = FALSE}
+library(DT)
+main <- main[order(main$Chr),]
+rownames(main) <- 1:nrow(main)
+datatable(main)
 ```
 Create binary matrix of patients by loci alteration < 0
 ```{r}
@@ -155,59 +147,50 @@ for (i in 1:nrow(loci)){
   # give patient a 1 for loss. If not, give the patient a zero.
   for (k in 2:ncol(locus.loss)){
     if (sum((locus.loss[,k]) == "1") > 0)
-    {row[k-1] <- 1} 
-    if (sum((locus.loss[,k]) == "0") > 0)
-    {row[k-1] <- 0} 
+    {row[k-1] <- 1} else {row[k-1] <- 0}
   }
   output[i,1:length(row)] <- row
   rownames(output)[i] <- locus
 }
 colnames(output) <- colnames(locus.loss)[2:ncol(locus.loss)]
-head(output)
+datatable(output)
 ```
-Verify number of patients harboring lost of at least one of the genes meeting cutoff
+Verify number of patients harboring loss of at least one of the genes meeting cutoff
 ```{r}
+output <- as.matrix(output[,2:ncol(output)])
 coverage <- 0
 for (i in (1:ncol(output))){
   if (sum(output[,i]) > 0)
   {coverage <- coverage + 1}
 }
 print(coverage)
+print(ncol(TCGA.fusion.neg)-1)
 ```
-The number of ETS- TCGA patients with loss of at least one gene from one of these loci is `r coverage`, and the total number of ETS- TCGA patients is `r ncol(TCGA.CNA.fusion.neg)-1`.
-```{r}```
+The number of ETS- TCGA patients with loss of at least one gene from one of these loci is `r coverage`, and the total number of ETS- TCGA patients is `r ncol(TCGA.fusion.neg)-1`. Thus, the ratio of ETS- patients covered at this threshold is `r coverage / (ncol(TCGA.fusion.neg)-1)`. This coverage should match the ratio of ETS- patients reported in the Determinring Threshold.Rmd file.
 ### Loci alteration profiles
-```{r}
-x <- as.matrix(output)
-heatmap(x, Rowv = NA, labCol = NA, xlab = "ETS- Patients", ylab = "Chromosome Arm",
-        col = c("Grey", "Red"), scale = "col", cexRow = 0.7)
-#legend(x = -.07, y = 0.5, legend <- c("Loss", "Unaltered"),
-       #fill = c("red", "grey"), cex = 1, box.lwd = 0)
+```{r, message=FALSE}
+library(pheatmap)
+heatmap(output, scale = "none", col = c("grey", "red"), Colv = NA, labCol = NA,
+        ylab = "Chromosome Arm", xlab = "ETS- patients")
+legend(x = 0.875, y = 0.2, legend = c("Deletion", "Unaltered"), fill = c("red", "grey"), box.lwd = 0)
 ```
 ```{r}```
 ### Mutual exclusivity
 ```{r, message=FALSE}
 library(Rediscover)
-library(pheatmap)
 library(RColorBrewer)
 #Calculate probability of copy number loss
-output <- as.matrix(output)
 p.loss <- getPM(output)
-z1 <- as.matrix(p.loss)
 #Calculate mutual exclusivity of copy number loss
 ME <- getMutex(output, p.loss)
 #Heat plot
 z2 <- as.matrix(ME)
-z2 <- -log10(z2)
 rownames(z2) <- rownames(output)
 colnames(z2) <- rownames(output)
 tri <- lower.tri(z2, diag = FALSE)
 z3 <- z2
 z3[tri] <- NA
 z3 <- z3[order(nrow(z3):1),]
-pheatmap(z3, color = brewer.pal(9,"Blues"),
-         main ="Mutual Exclusivity\nlog10(p-val)",
-         display_numbers = TRUE, cluster_rows = FALSE, cluster_cols = FALSE, 
-         na_col = "white")
+pheatmap(z3, color = brewer.pal(5, "Reds"), cluster_rows = FALSE, cluster_cols = FALSE, main = "Mutual Exclusivity\n(p-val)")
 ```
 
